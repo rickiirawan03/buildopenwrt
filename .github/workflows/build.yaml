@@ -1,0 +1,103 @@
+name: Build OpenWrt x86_64 with OpenNDS + PHP8
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update & Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential flex bison gawk libncurses5-dev \
+            libssl-dev gettext unzip file libelf-dev wget git python3
+
+      - name: Clone OpenWrt v22.03
+        run: |
+          git clone -b openwrt-22.03 --single-branch https://git.openwrt.org/openwrt/openwrt.git openwrt
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Configure Feeds & Packages
+        run: |
+          cd openwrt
+          # Tambahkan paket tambahan
+          echo "CONFIG_TARGET_x86=y" >> .config
+          echo "CONFIG_TARGET_x86_64=y" >> .config
+
+          # Paket sistem penting
+          echo "CONFIG_PACKAGE_base-files=y" >> .config
+          echo "CONFIG_PACKAGE_busybox=y" >> .config
+          echo "CONFIG_PACKAGE_opkg=y" >> .config
+          echo "CONFIG_PACKAGE_uci=y" >> .config
+          echo "CONFIG_PACKAGE_netifd=y" >> .config
+          echo "CONFIG_PACKAGE_firewall=y" >> .config
+
+          # Wireless & Auth
+          echo "CONFIG_PACKAGE_kmod-ath9k=y" >> .config
+          echo "CONFIG_PACKAGE_wpad-default-wolfssl=y" >> .config
+
+          # Captive portal + PHP
+          echo "CONFIG_PACKAGE_opennds=y" >> .config
+          echo "CONFIG_PACKAGE_php8=y" >> .config
+          echo "CONFIG_PACKAGE_php8-cli=y" >> .config
+          echo "CONFIG_PACKAGE_php8-cgi=y" >> .config
+          echo "CONFIG_PACKAGE_php8-fpm=y" >> .config
+          echo "CONFIG_PACKAGE_php8-fastcgi=y" >> .config
+
+          make defconfig
+
+      - name: Add Firstboot Scripts
+        run: |
+          cd openwrt/files
+          mkdir -p etc/uci-defaults
+
+          # Script untuk auto aktifkan WiFi
+          cat << "EOF" > etc/uci-defaults/99-enable-wifi
+          #!/bin/sh
+          uci set wireless.@wifi-device[0].disabled='0'
+          uci commit wireless
+          EOF
+
+          # Script integrasi uhttpd + PHP8 dan port tambahan
+          cat << "EOF" > etc/uci-defaults/99-uhttpd-php
+          #!/bin/sh
+          # Tambah listen port 2080
+          uci add_list uhttpd.main.listen_http='0.0.0.0:2080'
+          uci set uhttpd.main.interpreter='.php=/usr/bin/php-cgi'
+
+          # Integrasi PHP8 FastCGI
+          uci set uhttpd.main.script_timeout='60'
+          uci set uhttpd.main.network_timeout='30'
+          uci set uhttpd.main.interpreter='.php=/usr/bin/php8-cgi'
+          uci commit uhttpd
+          EOF
+
+          # Script konfigurasi OpenNDS FAS
+          cat << "EOF" > etc/uci-defaults/99-opennds-fas
+          #!/bin/sh
+          uci set opennds.@fas[0].enabled='1'
+          uci set opennds.@fas[0].faspath='/nds/fas-aes.php'
+          uci set opennds.@fas[0].fashost='127.0.0.1'
+          uci set opennds.@fas[0].fasport='2080'
+          uci commit opennds
+          EOF
+
+          chmod +x etc/uci-defaults/*
+
+      - name: Build OpenWrt
+        run: |
+          cd openwrt
+          make -j$(nproc) V=s
+
+      - name: Upload Firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-x86_64
+          path: openwrt/bin/targets/x86/64/*
