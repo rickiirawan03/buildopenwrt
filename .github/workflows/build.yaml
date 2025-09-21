@@ -55,18 +55,18 @@ jobs:
 
       - name: Add Firstboot Scripts
         run: |
-          cd openwrt/files
-          mkdir -p etc/uci-defaults
-
+          cd openwrt
+          mkdir -p files/etc/uci-defaults
+          
           # Script untuk auto aktifkan WiFi
-          cat << "EOF" > etc/uci-defaults/99-enable-wifi
+          cat << "EOF" > files/etc/uci-defaults/99-enable-wifi
           #!/bin/sh
           uci set wireless.@wifi-device[0].disabled='0'
           uci commit wireless
           EOF
 
           # Script integrasi uhttpd + PHP8 dan port tambahan
-          cat << "EOF" > etc/uci-defaults/99-uhttpd-php
+          cat << "EOF" > files/etc/uci-defaults/99-uhttpd-php
           #!/bin/sh
           # Tambah listen port 2080
           uci add_list uhttpd.main.listen_http='0.0.0.0:2080'
@@ -80,7 +80,7 @@ jobs:
           EOF
 
           # Script konfigurasi OpenNDS FAS
-          cat << "EOF" > etc/uci-defaults/99-opennds-fas
+          cat << "EOF" > files/etc/uci-defaults/99-opennds-fas
           #!/bin/sh
           uci set opennds.@fas[0].enabled='1'
           uci set opennds.@fas[0].faspath='/nds/fas-aes.php'
@@ -89,7 +89,7 @@ jobs:
           uci commit opennds
           EOF
 
-          chmod +x etc/uci-defaults/*
+          chmod +x files/etc/uci-defaults/*
 
       - name: Build OpenWrt
         run: |
